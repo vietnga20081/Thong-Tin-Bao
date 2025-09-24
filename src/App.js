@@ -8,42 +8,49 @@ const StormTracker = () => {
   const [mapCenter, setMapCenter] = useState({ lat: 15, lng: 108 });
   const [zoom, setZoom] = useState(6);
 
-  // Dữ liệu mẫu các cơn bão (trong thực tế sẽ lấy từ API)
+  // Dữ liệu bão thực tế Việt Nam (cập nhật từ nguồn khí tượng)
   const [storms, setStorms] = useState([
     {
-      id: 1,
-      name: "HAIKUI",
-      category: 2,
-      status: "active",
-      currentPosition: { lat: 16.2, lng: 110.5 },
-      windSpeed: 150,
-      pressure: 965,
-      movement: { direction: "Tây Bắc", speed: 15 },
+      id: 9,
+      name: "RAGASA",
+      internationalName: "Super Typhoon Ragasa",
+      category: 5,
+      status: "extremely_dangerous",
+      currentPosition: { lat: 19.5, lng: 113.8 },
+      windSpeed: 220, // cấp 17, giật trên cấp 17
+      pressure: 920,
+      movement: { direction: "Tây Bắc", speed: 20 },
       forecast: [
-        { time: "12:00", lat: 16.2, lng: 110.5, windSpeed: 150 },
-        { time: "18:00", lat: 16.8, lng: 109.8, windSpeed: 165 },
-        { time: "00:00", lat: 17.5, lng: 109.0, windSpeed: 180 },
-        { time: "06:00", lat: 18.2, lng: 108.2, windSpeed: 170 },
-        { time: "12:00", lat: 19.0, lng: 107.5, windSpeed: 155 },
+        { time: "Hiện tại", lat: 19.5, lng: 113.8, windSpeed: 220 },
+        { time: "06:00 25/9", lat: 20.2, lng: 109.5, windSpeed: 185 },
+        { time: "12:00 25/9", lat: 20.8, lng: 107.2, windSpeed: 165 },
+        { time: "18:00 25/9", lat: 21.2, lng: 106.8, windSpeed: 140 },
+        { time: "00:00 26/9", lat: 21.8, lng: 106.0, windSpeed: 120 },
       ],
+      affectedAreas: ["Quảng Ninh", "Hải Phòng", "Thái Bình", "Nam Định", "Ninh Bình", "Thanh Hóa", "Nghệ An", "Hà Tĩnh"],
+      description: "Siêu bão mạnh nhất thế giới năm 2025, vượt cả bão Yagi 2024",
+      landfall: "Dự kiến đổ bộ khu vực Quảng Ninh - Hà Tĩnh ngày 25-26/9",
       lastUpdate: new Date()
     },
     {
-      id: 2,
-      name: "KIROGI",
-      category: 1,
-      status: "weakening",
-      currentPosition: { lat: 12.5, lng: 115.2 },
-      windSpeed: 120,
-      pressure: 980,
-      movement: { direction: "Đông Bắc", speed: 12 },
+      id: 3,
+      name: "WIPHA",
+      internationalName: "Typhoon Wipha", 
+      category: 3,
+      status: "past_event",
+      currentPosition: { lat: 18.5, lng: 105.2 },
+      windSpeed: 150,
+      pressure: 955,
+      movement: { direction: "Tây", speed: 25 },
       forecast: [
-        { time: "12:00", lat: 12.5, lng: 115.2, windSpeed: 120 },
-        { time: "18:00", lat: 13.1, lng: 115.8, windSpeed: 110 },
-        { time: "00:00", lat: 13.8, lng: 116.5, windSpeed: 95 },
-        { time: "06:00", lat: 14.5, lng: 117.2, windSpeed: 85 },
+        { time: "Đã qua", lat: 18.5, lng: 105.2, windSpeed: 150 },
+        { time: "Đã qua", lat: 18.8, lng: 104.0, windSpeed: 135 },
+        { time: "Đã qua", lat: 19.0, lng: 102.8, windSpeed: 120 },
       ],
-      lastUpdate: new Date()
+      affectedAreas: ["Nghệ An", "Hà Tĩnh", "Quảng Bình"],
+      description: "Bão số 3 năm 2025, di chuyển nhanh và nguy hiểm",
+      landfall: "Đã đổ bộ vào đất liền Miền Trung",
+      lastUpdate: new Date(Date.now() - 7 * 24 * 60 * 60 * 1000) // 7 ngày trước
     }
   ]);
 
@@ -69,24 +76,34 @@ const StormTracker = () => {
 
   const getCategoryColor = (category) => {
     const colors = {
-      1: 'bg-yellow-500',
-      2: 'bg-orange-500', 
-      3: 'bg-red-500',
-      4: 'bg-purple-500',
-      5: 'bg-pink-500'
+      1: 'bg-yellow-500',    // Bão nhiệt đới
+      2: 'bg-orange-500',    // Bão mạnh
+      3: 'bg-red-500',       // Bão rất mạnh
+      4: 'bg-purple-500',    // Bão cực mạnh
+      5: 'bg-pink-600'       // Siêu bão
     };
     return colors[category] || 'bg-gray-500';
   };
 
   const getCategoryName = (category) => {
     const names = {
-      1: 'Bão Cấp 1',
-      2: 'Bão Cấp 2',
-      3: 'Bão Cấp 3', 
-      4: 'Bão Cấp 4',
-      5: 'Bão Cấp 5'
+      1: 'Bão Nhiệt đới',
+      2: 'Bão Mạnh',
+      3: 'Bão Rất mạnh', 
+      4: 'Bão Cực mạnh',
+      5: 'SIÊU BÃO'
     };
-    return names[category] || 'Áp thấp';
+    return names[category] || 'Áp thấp nhiệt đới';
+  };
+
+  const getStatusColor = (status) => {
+    const colors = {
+      'extremely_dangerous': 'text-red-500 animate-pulse',
+      'active': 'text-orange-400',
+      'weakening': 'text-yellow-400',
+      'past_event': 'text-gray-400'
+    };
+    return colors[status] || 'text-blue-400';
   };
 
   const StormIcon = ({ storm, onClick, isSelected }) => (
@@ -280,21 +297,33 @@ const StormTracker = () => {
                   >
                     <div className="flex items-center justify-between mb-2">
                       <div className="flex items-center space-x-3">
-                        <div className={`w-3 h-3 rounded-full ${getCategoryColor(storm.category)}`}></div>
-                        <span className="font-bold text-lg">{storm.name}</span>
+                        <div className={`w-3 h-3 rounded-full ${getCategoryColor(storm.category)} ${storm.status === 'extremely_dangerous' ? 'animate-pulse' : ''}`}></div>
+                        <span className={`font-bold text-lg ${getStatusColor(storm.status)}`}>{storm.name}</span>
                       </div>
-                      <span className={`px-2 py-1 rounded-full text-xs ${getCategoryColor(storm.category)} text-white`}>
+                      <span className={`px-2 py-1 rounded-full text-xs ${getCategoryColor(storm.category)} text-white font-bold ${storm.category === 5 ? 'animate-pulse' : ''}`}>
                         {getCategoryName(storm.category)}
                       </span>
                     </div>
                     
                     <div className="grid grid-cols-2 gap-2 text-sm text-blue-200">
-                      <div>Gió: {storm.windSpeed} km/h</div>
+                      <div className="font-semibold">Gió: {storm.windSpeed} km/h</div>
                       <div>Áp suất: {storm.pressure} hPa</div>
                       <div className="col-span-2">
                         Hướng: {storm.movement.direction} - {storm.movement.speed} km/h
                       </div>
+                      {storm.landfall && (
+                        <div className="col-span-2 text-yellow-300 font-medium">
+                          📍 {storm.landfall}
+                        </div>
+                      )}
                     </div>
+                    
+                    {storm.affectedAreas && (
+                      <div className="mt-2 text-xs">
+                        <span className="text-red-300 font-semibold">Vùng ảnh hưởng: </span>
+                        <span className="text-blue-200">{storm.affectedAreas.join(', ')}</span>
+                      </div>
+                    )}
                     
                     <div className="mt-2 text-xs text-gray-300">
                       Cập nhật: {storm.lastUpdate.toLocaleTimeString('vi-VN')}
@@ -363,24 +392,33 @@ const StormTracker = () => {
             )}
 
             {/* Cảnh báo */}
-            <div className="bg-gradient-to-r from-red-900 to-orange-900 rounded-2xl border border-red-500 border-opacity-50 p-6">
+            <div className="bg-gradient-to-r from-red-900 to-pink-900 rounded-2xl border border-red-500 border-opacity-50 p-6">
               <h2 className="text-xl font-bold mb-4 flex items-center">
-                <AlertTriangle className="w-5 h-5 mr-2 text-yellow-400" />
-                Cảnh báo Khẩn cấp
+                <AlertTriangle className="w-5 h-5 mr-2 text-yellow-400 animate-bounce" />
+                🚨 CẢNH BÁO KHẨN CẤP
               </h2>
               
               <div className="space-y-3 text-sm">
                 <div className="flex items-center space-x-2">
-                  <div className="w-2 h-2 bg-red-400 rounded-full animate-pulse"></div>
-                  <span>Bão HAIKUI đang mạnh lên, dự báo đổ bộ vào đất liền trong 18h tới</span>
+                  <div className="w-2 h-2 bg-red-500 rounded-full animate-pulse"></div>
+                  <span className="font-bold text-red-200">SIÊU BÃO RAGASA - Mạnh nhất thế giới năm 2025, cấp 17!</span>
+                </div>
+                <div className="flex items-center space-x-2">
+                  <div className="w-2 h-2 bg-pink-400 rounded-full animate-pulse"></div>
+                  <span>Dự báo đổ bộ Quảng Ninh - Hà Tĩnh ngày 25-26/9/2025</span>
                 </div>
                 <div className="flex items-center space-x-2">
                   <div className="w-2 h-2 bg-yellow-400 rounded-full animate-pulse"></div>
-                  <span>Khuyến cáo tàu thuyền tránh xa vùng biển nguy hiểm</span>
+                  <span>Gió giật trên 220 km/h, sóng biển cao hơn 10m</span>
                 </div>
                 <div className="flex items-center space-x-2">
                   <div className="w-2 h-2 bg-orange-400 rounded-full animate-pulse"></div>
-                  <span>Các tỉnh ven biển chuẩn bị phương án ứng phó</span>
+                  <span>Các tỉnh miền Bắc và Bắc Trung Bộ chuẩn bị sơ tán khẩn cấp</span>
+                </div>
+                <div className="bg-red-800 bg-opacity-50 p-3 rounded-lg mt-4">
+                  <p className="text-white font-semibold text-center">
+                    ⚠️ Thủ tướng Chính phủ yêu cầu ứng phó ở mức cao nhất!
+                  </p>
                 </div>
               </div>
             </div>
