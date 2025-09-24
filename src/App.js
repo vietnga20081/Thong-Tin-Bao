@@ -1,12 +1,13 @@
 import React, { useState, useEffect, useRef } from 'react';
-import { Cloud, Wind, Thermometer, Droplets, Eye, Navigation, AlertTriangle, Clock, MapPin, TrendingUp } from 'lucide-react';
+import { Cloud, Wind, Thermometer, Droplets, Eye, Navigation, AlertTriangle, Clock, MapPin, TrendingUp, Layers, Satellite, Zap } from 'lucide-react';
 
 const StormTracker = () => {
   const [selectedStorm, setSelectedStorm] = useState(null);
   const [currentTime, setCurrentTime] = useState(new Date());
-  const mapRef = useRef(null);
-  const [mapCenter, setMapCenter] = useState({ lat: 15, lng: 108 });
-  const [zoom, setZoom] = useState(6);
+  const [showWindLayer, setShowWindLayer] = useState(true);
+  const [showPressureLayer, setShowPressureLayer] = useState(false);
+  const [map, setMap] = useState(null);
+  const mapContainerRef = useRef(null);
 
   // Dữ liệu bão thực tế Việt Nam (cập nhật từ nguồn khí tượng)
   const [storms, setStorms] = useState([
@@ -54,7 +55,7 @@ const StormTracker = () => {
     }
   ]);
 
-  // Cập nhật thời gian thực
+  // Cập nhật thời gian và dữ liệu thực
   useEffect(() => {
     const timer = setInterval(() => {
       setCurrentTime(new Date());
@@ -73,6 +74,266 @@ const StormTracker = () => {
 
     return () => clearInterval(timer);
   }, []);
+
+  // Khởi tạo bản đồ Leaflet thực tế
+  useEffect(() => {
+    if (!mapContainerRef.current || map) return;
+
+    // Import Leaflet CSS
+    const link = document.createElement('link');
+    link.rel = 'stylesheet';
+    link.href = 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.css';
+    document.head.appendChild(link);
+
+    // Import Leaflet JS
+    const script = document.createElement('script');
+    script.src = 'https://cdnjs.cloudflare.com/ajax/libs/leaflet/1.9.4/leaflet.min.js';
+    script.onload = () => {
+      initializeMap();
+    };
+    document.head.appendChild(script);
+
+    const initializeMap = () => {
+      const L = window.L;
+      if (!L) return;
+      
+      // Tạo bản đồ tập trung vào Biển Đông và Việt Nam
+      const mapInstance = L.map(mapContainerRef.current, {
+        center: [16.0, 108.0], 
+        zoom: 6,
+        zoomControl: true,
+        scrollWheelZoom: true,
+        doubleClickZoom: true
+      });
+
+      // Các layer bản đồ chất lượng cao
+      const baseLayers = {
+        'Vệ tinh': L.tileLayer('https://server.arcgisonline.com/ArcGIS/rest/services/World_Imagery/MapServer/tile/{z}/{y}/{x}', {
+          attribution: '© Esri, Maxar, GeoEye',
+          maxZoom: 18
+        }),
+        'Địa hình': L.tileLayer('https://{s}.tile.opentopomap.org/{z}/{x}/{y}.png', {
+          attribution: '© OpenTopoMap contributors',
+          maxZoom: 17
+        }),
+        'Đường phố': L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+          attribution: '© OpenStreetMap contributors',
+          maxZoom: 19
+        })
+      };
+
+      // Thêm layer mặc định (vệ tinh)
+      baseLayers['Vệ tinh'].addTo(mapInstance);
+
+      // Thêm điều khiển layer
+      L.control.layers(baseLayers, null, {
+        position: 'topleft',
+        collapsed: false
+      }).addTo(mapInstance);
+
+      // Thêm các tỉnh thành Việt Nam
+      const vietnamProvinces = [
+        { name: 'Quảng Ninh', coords: [21.006, 107.293], risk: 'high' },
+        { name: 'Hải Phòng', coords: [20.846, 106.688], risk: 'high' },
+        { name: 'Thái Bình', coords: [20.448, 106.336], risk: 'high' },
+        { name: 'Nam Định', coords: [20.434, 106.178], risk: 'medium' },
+        { name: 'Thanh Hóa', coords: [19.806, 105.785], risk: 'medium' },
+        { name: 'Nghệ An', coords: [18.674, 105.690], risk: 'medium' },
+        { name: 'Hà Tĩnh', coords: [18.343, 105.905], risk: 'high' },
+        { name: 'Quảng Bình', coords: [17.531, 106.042], risk: 'low' }
+      ];
+
+      vietnamProvinces.forEach(province => {
+        const riskColors = {
+          'high': '#ef4444',
+          'medium': '#f97316', 
+          'low': '#eab308'
+        };
+        
+        L.circleMarker(province.coords, {
+          color: riskColors[province.risk],
+          fillColor: riskColors[province.risk],
+          fillOpacity: 0.3,
+          radius: 15,
+          weight: 2
+        }).addTo(mapInstance)
+        .bindPopup(`<strong>${province.name}</strong><br>Mức độ rủi ro: ${province.risk.toUpperCase()}`);
+      });
+
+      // Thêm markers cho các cơn bão
+      storms.forEach(storm => {
+        const stormIcon = L.divIcon({
+          html: `
+            <div class="storm-marker ${storm.category >= 4 ? 'super-storm' : ''}" 
+                 style="background: ${getCategoryColorHex(storm.category)};">
+              <div class="storm-eye ${storm.status === 'extremely_dangerous' ? 'danger-eye' : ''}"></div>
+              <div class="storm-name">${storm.name}</div>
+              <div class="storm-category">Cấp ${storm.category}</div>
+            </div>
+          `,
+          className: 'storm-icon',
+          iconSize: [70, 70],
+          iconAnchor: [35, 35]
+        });
+
+        const marker = L.marker([storm.currentPosition.lat, storm.currentPosition.lng], {
+          icon: stormIcon
+        }).addTo(mapInstance);
+
+        // Popup chi tiết
+        marker.bindPopup(`
+          <div class="storm-popup">
+            <h3>${storm.name} ${storm.internationalName ? `(${storm.internationalName})` : ''}</h3>
+            <div class="popup-grid">
+              <div><strong>Cấp độ:</strong> ${getCategoryName(storm.category)}</div>
+              <div><strong>Gió:</strong> ${storm.windSpeed} km/h</div>
+              <div><strong>Áp suất:</strong> ${storm.pressure} hPa</div>
+              <div><strong>Di chuyển:</strong> ${storm.movement.direction} - ${storm.movement.speed} km/h</div>
+              ${storm.landfall ? `<div class="landfall"><strong>Dự báo đổ bộ:</strong><br>${storm.landfall}</div>` : ''}
+              ${storm.affectedAreas ? `<div class="affected"><strong>Vùng ảnh hưởng:</strong><br>${storm.affectedAreas.slice(0,3).join(', ')}...</div>` : ''}
+            </div>
+            <div class="last-update">Cập nhật: ${storm.lastUpdate.toLocaleTimeString('vi-VN')}</div>
+          </div>
+        `);
+
+        // Vòng tròn ảnh hưởng
+        const dangerRadius = storm.category * 100000; // 100km per category
+        const warningRadius = dangerRadius * 1.5;
+        
+        // Vùng nguy hiểm
+        L.circle([storm.currentPosition.lat, storm.currentPosition.lng], {
+          color: getCategoryColorHex(storm.category),
+          fillColor: getCategoryColorHex(storm.category),
+          fillOpacity: 0.15,
+          radius: dangerRadius,
+          weight: 3,
+          dashArray: '5, 5'
+        }).addTo(mapInstance);
+
+        // Vùng cảnh báo
+        L.circle([storm.currentPosition.lat, storm.currentPosition.lng], {
+          color: getCategoryColorHex(storm.category),
+          fillColor: getCategoryColorHex(storm.category),
+          fillOpacity: 0.05,
+          radius: warningRadius,
+          weight: 1,
+          dashArray: '10, 10'
+        }).addTo(mapInstance);
+
+        // Đường dự báo
+        if (storm.forecast && storm.forecast.length > 1) {
+          const forecastPath = storm.forecast.map(point => [point.lat, point.lng]);
+          
+          L.polyline(forecastPath, {
+            color: '#ef4444',
+            weight: 4,
+            opacity: 0.8,
+            dashArray: '15, 10'
+          }).addTo(mapInstance);
+
+          // Các điểm dự báo
+          storm.forecast.slice(1).forEach((point, index) => {
+            const intensity = point.windSpeed;
+            const color = intensity > 180 ? '#dc2626' : intensity > 150 ? '#f97316' : '#eab308';
+            
+            L.circleMarker([point.lat, point.lng], {
+              color: color,
+              fillColor: color,
+              fillOpacity: 0.8,
+              radius: 8,
+              weight: 2
+            }).addTo(mapInstance)
+            .bindPopup(`
+              <div class="forecast-popup">
+                <strong>Dự báo: ${point.time}</strong><br>
+                Gió: ${point.windSpeed} km/h<br>
+                Vị trí: ${point.lat.toFixed(2)}°N, ${point.lng.toFixed(2)}°E
+              </div>
+            `);
+          });
+        }
+      });
+
+      // Thêm layer gió nếu được bật
+      if (showWindLayer) {
+        addWindLayer(mapInstance);
+      }
+
+      // Thêm layer nhiệt độ biển
+      addSeaTemperatureLayer(mapInstance);
+
+      setMap(mapInstance);
+    };
+
+    // Cleanup function
+    return () => {
+      if (map) {
+        map.remove();
+        setMap(null);
+      }
+    };
+  }, [storms, showWindLayer]);
+
+  // Hàm thêm layer gió thực tế
+  const addWindLayer = (mapInstance) => {
+    const windData = [
+      { lat: 20.5, lng: 110.5, direction: 225, speed: 180, type: 'extreme' },
+      { lat: 19.8, lng: 109.2, direction: 240, speed: 165, type: 'strong' },
+      { lat: 18.5, lng: 108.0, direction: 270, speed: 120, type: 'moderate' },
+      { lat: 17.0, lng: 107.5, direction: 285, speed: 90, type: 'light' },
+      { lat: 16.0, lng: 109.0, direction: 300, speed: 75, type: 'light' },
+      { lat: 15.0, lng: 110.5, direction: 45, speed: 60, type: 'light' }
+    ];
+
+    windData.forEach(wind => {
+      const windStrength = wind.speed / 200;
+      const color = wind.type === 'extreme' ? '#dc2626' : 
+                   wind.type === 'strong' ? '#f97316' : 
+                   wind.type === 'moderate' ? '#eab308' : '#3b82f6';
+      
+      const windIcon = window.L.divIcon({
+        html: `
+          <div class="wind-arrow ${wind.type}" 
+               style="transform: rotate(${wind.direction}deg); 
+                      color: ${color}; 
+                      opacity: ${windStrength + 0.3}">
+            →
+            <div class="wind-speed">${wind.speed}</div>
+          </div>
+        `,
+        className: 'wind-marker',
+        iconSize: [40, 40],
+        iconAnchor: [20, 20]
+      });
+
+      window.L.marker([wind.lat, wind.lng], { icon: windIcon }).addTo(mapInstance);
+    });
+  };
+
+  // Thêm layer nhiệt độ nước biển
+  const addSeaTemperatureLayer = (mapInstance) => {
+    const temperatureData = [
+      { lat: 20.0, lng: 110.0, temp: 30.2, type: 'hot' },
+      { lat: 18.0, lng: 112.0, temp: 29.8, type: 'warm' },
+      { lat: 16.0, lng: 108.0, temp: 28.5, type: 'normal' },
+      { lat: 14.0, lng: 109.0, temp: 27.8, type: 'cool' }
+    ];
+
+    temperatureData.forEach(temp => {
+      const tempColor = temp.type === 'hot' ? '#dc2626' :
+                       temp.type === 'warm' ? '#f97316' :
+                       temp.type === 'normal' ? '#22c55e' : '#3b82f6';
+      
+      window.L.circleMarker([temp.lat, temp.lng], {
+        color: tempColor,
+        fillColor: tempColor,
+        fillOpacity: 0.6,
+        radius: 12,
+        weight: 2
+      }).addTo(mapInstance)
+      .bindPopup(`Nhiệt độ nước biển: ${temp.temp}°C`);
+    });
+  };
 
   const getCategoryColor = (category) => {
     const colors = {
@@ -106,66 +367,15 @@ const StormTracker = () => {
     return colors[status] || 'text-blue-400';
   };
 
-  const StormIcon = ({ storm, onClick, isSelected }) => (
-    <div 
-      className={`absolute transform -translate-x-1/2 -translate-y-1/2 cursor-pointer transition-all duration-300 ${isSelected ? 'scale-125' : 'hover:scale-110'}`}
-      style={{ 
-        left: `${((storm.currentPosition.lng - 100) / 20) * 100}%`,
-        top: `${(100 - ((storm.currentPosition.lat - 5) / 20) * 100)}%`
-      }}
-      onClick={() => onClick(storm)}
-    >
-      <div className={`relative ${getCategoryColor(storm.category)} rounded-full p-3 shadow-lg border-4 border-white`}>
-        <Wind className="w-6 h-6 text-white" />
-        <div className="absolute -top-8 left-1/2 transform -translate-x-1/2 bg-black bg-opacity-75 text-white text-xs px-2 py-1 rounded whitespace-nowrap">
-          {storm.name}
-        </div>
-      </div>
-      
-      {/* Vòng tròn ảnh hưởng */}
-      <div className={`absolute top-1/2 left-1/2 transform -translate-x-1/2 -translate-y-1/2 ${getCategoryColor(storm.category)} opacity-20 rounded-full animate-ping`}
-           style={{ width: `${storm.category * 40}px`, height: `${storm.category * 40}px` }}>
-      </div>
-    </div>
-  );
-
-  const ForecastPath = ({ storm }) => {
-    const pathPoints = storm.forecast.map((point, index) => ({
-      x: ((point.lng - 100) / 20) * 100,
-      y: 100 - ((point.lat - 5) / 20) * 100,
-      time: point.time,
-      windSpeed: point.windSpeed
-    }));
-
-    return (
-      <svg className="absolute inset-0 w-full h-full pointer-events-none">
-        {pathPoints.map((point, index) => {
-          if (index === 0) return null;
-          const prevPoint = pathPoints[index - 1];
-          return (
-            <g key={index}>
-              <line
-                x1={`${prevPoint.x}%`}
-                y1={`${prevPoint.y}%`}
-                x2={`${point.x}%`}
-                y2={`${point.y}%`}
-                stroke="#ef4444"
-                strokeWidth="3"
-                strokeDasharray="10,5"
-                opacity="0.8"
-              />
-              <circle
-                cx={`${point.x}%`}
-                cy={`${point.y}%`}
-                r="4"
-                fill="#ef4444"
-                opacity="0.8"
-              />
-            </g>
-          );
-        })}
-      </svg>
-    );
+  const getCategoryColorHex = (category) => {
+    const colors = {
+      1: '#eab308', // yellow-500
+      2: '#f97316', // orange-500  
+      3: '#ef4444', // red-500
+      4: '#a855f7', // purple-500
+      5: '#ec4899'  // pink-500
+    };
+    return colors[category] || '#6b7280';
   };
 
   return (
@@ -202,72 +412,78 @@ const StormTracker = () => {
           {/* Bản đồ chính */}
           <div className="lg:col-span-2">
             <div className="bg-black bg-opacity-30 backdrop-blur-sm rounded-2xl border border-white border-opacity-20 p-6">
-              <h2 className="text-xl font-bold mb-4 flex items-center">
-                <MapPin className="w-5 h-5 mr-2 text-red-400" />
-                Bản đồ Theo dõi Bão
+              <h2 className="text-xl font-bold mb-4 flex items-center justify-between">
+                <div className="flex items-center">
+                  <MapPin className="w-5 h-5 mr-2 text-red-400" />
+                  Bản đồ Theo dõi Bão - Việt Nam
+                </div>
+                <div className="flex items-center space-x-2">
+                  <button 
+                    onClick={() => setShowWindLayer(!showWindLayer)}
+                    className={`px-3 py-1 rounded-lg text-xs transition-all ${showWindLayer ? 'bg-blue-500' : 'bg-gray-600'}`}
+                  >
+                    <Wind className="w-3 h-3 inline mr-1" />
+                    Gió
+                  </button>
+                  <button 
+                    onClick={() => setShowPressureLayer(!showPressureLayer)}
+                    className={`px-3 py-1 rounded-lg text-xs transition-all ${showPressureLayer ? 'bg-purple-500' : 'bg-gray-600'}`}
+                  >
+                    <TrendingUp className="w-3 h-3 inline mr-1" />
+                    Áp suất
+                  </button>
+                  <button className="px-3 py-1 rounded-lg text-xs bg-green-600">
+                    <Satellite className="w-3 h-3 inline mr-1" />
+                    Vệ tinh
+                  </button>
+                </div>
               </h2>
               
-              <div className="relative bg-gradient-to-br from-blue-600 to-blue-800 rounded-xl overflow-hidden" style={{ height: '500px' }}>
-                {/* Grid tọa độ */}
-                <div className="absolute inset-0">
-                  {[...Array(5)].map((_, i) => (
-                    <div key={i} className="absolute border-white border-opacity-20" 
-                         style={{ 
-                           left: `${i * 25}%`, 
-                           top: 0, 
-                           width: '1px', 
-                           height: '100%',
-                           borderLeft: '1px dashed'
-                         }} />
-                  ))}
-                  {[...Array(5)].map((_, i) => (
-                    <div key={i} className="absolute border-white border-opacity-20" 
-                         style={{ 
-                           top: `${i * 25}%`, 
-                           left: 0, 
-                           height: '1px', 
-                           width: '100%',
-                           borderTop: '1px dashed'
-                         }} />
-                  ))}
-                </div>
-
-                {/* Vùng đất liền (mô phỏng) */}
-                <div className="absolute inset-0">
-                  <div className="absolute bg-green-800 opacity-60" 
-                       style={{ 
-                         left: '10%', 
-                         top: '20%', 
-                         width: '30%', 
-                         height: '60%',
-                         clipPath: 'polygon(0 20%, 100% 0, 100% 80%, 0 100%)'
-                       }} />
-                </div>
-
-                {/* Đường dự báo */}
-                {selectedStorm && <ForecastPath storm={selectedStorm} />}
+              <div className="relative bg-gray-900 rounded-xl overflow-hidden" style={{ height: '600px' }}>
+                {/* Container cho bản đồ Leaflet */}
+                <div ref={mapContainerRef} className="w-full h-full"></div>
                 
-                {/* Các cơn bão */}
-                {storms.map(storm => (
-                  <StormIcon 
-                    key={storm.id} 
-                    storm={storm} 
-                    onClick={setSelectedStorm}
-                    isSelected={selectedStorm?.id === storm.id}
-                  />
-                ))}
-                
-                {/* Chú thích */}
-                <div className="absolute bottom-4 left-4 bg-black bg-opacity-70 rounded-lg p-3">
+                {/* Overlay điều khiển */}
+                <div className="absolute top-4 right-4 bg-black bg-opacity-70 rounded-lg p-3 space-y-2">
                   <div className="text-xs space-y-1">
                     <div className="flex items-center space-x-2">
                       <div className="w-3 h-3 bg-red-400 rounded-full"></div>
                       <span>Đường dự báo</span>
                     </div>
                     <div className="flex items-center space-x-2">
-                      <div className="w-3 h-3 bg-green-800 rounded"></div>
-                      <span>Vùng đất liền</span>
+                      <div className="w-3 h-3 bg-blue-400 rounded-full opacity-20"></div>
+                      <span>Vùng ảnh hưởng</span>
                     </div>
+                    <div className="flex items-center space-x-2">
+                      <div className="w-3 h-3 bg-green-500 rounded"></div>
+                      <span>Đất liền VN</span>
+                    </div>
+                    <div className="flex items-center space-x-2">
+                      <Zap className="w-3 h-3 text-yellow-400" />
+                      <span>Mắt bão</span>
+                    </div>
+                  </div>
+                  
+                  <div className="border-t border-gray-500 pt-2">
+                    <div className="text-xs text-gray-300">
+                      <div>Tọa độ: {selectedStorm ? 
+                        `${selectedStorm.currentPosition.lat.toFixed(2)}°N, ${selectedStorm.currentPosition.lng.toFixed(2)}°E` 
+                        : '16.0°N, 108.0°E'}
+                      </div>
+                      <div>Zoom: {map ? Math.round(map.getZoom()) : 6}</div>
+                      <div className="text-green-400">🟢 LIVE</div>
+                    </div>
+                  </div>
+                </div>
+
+                {/* Weather data overlay */}
+                <div className="absolute bottom-4 left-4 bg-black bg-opacity-70 rounded-lg p-3">
+                  <div className="text-xs space-y-1">
+                    <div className="font-semibold text-yellow-400">Dữ liệu khí tượng</div>
+                    <div>🌡️ Nhiệt độ nước biển: 29.5°C</div>
+                    <div>🌊 Độ cao sóng: 6-10m</div>
+                    <div>💨 Gió: Đông Bắc cấp 8-10</div>
+                    <div className="text-orange-400">⚡ Cập nhật: {currentTime.toLocaleTimeString('vi-VN')}</div>
                   </div>
                 </div>
               </div>
@@ -353,80 +569,3 @@ const StormTracker = () => {
                     </div>
                     
                     <div className="bg-white bg-opacity-10 rounded-lg p-3">
-                      <div className="flex items-center space-x-2 mb-1">
-                        <TrendingUp className="w-4 h-4 text-red-400" />
-                        <span className="text-sm text-blue-200">Áp suất</span>
-                      </div>
-                      <div className="text-xl font-bold">{selectedStorm.pressure} hPa</div>
-                    </div>
-                  </div>
-
-                  {/* Vị trí hiện tại */}
-                  <div className="bg-white bg-opacity-10 rounded-lg p-3">
-                    <div className="flex items-center space-x-2 mb-2">
-                      <Navigation className="w-4 h-4 text-green-400" />
-                      <span className="text-sm text-blue-200">Vị trí hiện tại</span>
-                    </div>
-                    <div className="text-lg font-mono">
-                      {selectedStorm.currentPosition.lat.toFixed(2)}°N, {selectedStorm.currentPosition.lng.toFixed(2)}°E
-                    </div>
-                  </div>
-
-                  {/* Dự báo */}
-                  <div className="bg-white bg-opacity-10 rounded-lg p-3">
-                    <h3 className="font-bold mb-3 text-yellow-400">Dự báo 24h tới</h3>
-                    <div className="space-y-2">
-                      {selectedStorm.forecast.slice(1, 4).map((forecast, index) => (
-                        <div key={index} className="flex justify-between text-sm">
-                          <span>{forecast.time}</span>
-                          <span>{forecast.windSpeed} km/h</span>
-                          <span className="text-blue-300">
-                            {forecast.lat.toFixed(1)}°N, {forecast.lng.toFixed(1)}°E
-                          </span>
-                        </div>
-                      ))}
-                    </div>
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {/* Cảnh báo */}
-            <div className="bg-gradient-to-r from-red-900 to-pink-900 rounded-2xl border border-red-500 border-opacity-50 p-6">
-              <h2 className="text-xl font-bold mb-4 flex items-center">
-                <AlertTriangle className="w-5 h-5 mr-2 text-yellow-400 animate-bounce" />
-                🚨 CẢNH BÁO KHẨN CẤP
-              </h2>
-              
-              <div className="space-y-3 text-sm">
-                <div className="flex items-center space-x-2">
-                  <div className="w-2 h-2 bg-red-500 rounded-full animate-pulse"></div>
-                  <span className="font-bold text-red-200">SIÊU BÃO RAGASA - Mạnh nhất thế giới năm 2025, cấp 17!</span>
-                </div>
-                <div className="flex items-center space-x-2">
-                  <div className="w-2 h-2 bg-pink-400 rounded-full animate-pulse"></div>
-                  <span>Dự báo đổ bộ Quảng Ninh - Hà Tĩnh ngày 25-26/9/2025</span>
-                </div>
-                <div className="flex items-center space-x-2">
-                  <div className="w-2 h-2 bg-yellow-400 rounded-full animate-pulse"></div>
-                  <span>Gió giật trên 220 km/h, sóng biển cao hơn 10m</span>
-                </div>
-                <div className="flex items-center space-x-2">
-                  <div className="w-2 h-2 bg-orange-400 rounded-full animate-pulse"></div>
-                  <span>Các tỉnh miền Bắc và Bắc Trung Bộ chuẩn bị sơ tán khẩn cấp</span>
-                </div>
-                <div className="bg-red-800 bg-opacity-50 p-3 rounded-lg mt-4">
-                  <p className="text-white font-semibold text-center">
-                    ⚠️ Thủ tướng Chính phủ yêu cầu ứng phó ở mức cao nhất!
-                  </p>
-                </div>
-              </div>
-            </div>
-          </div>
-        </div>
-      </div>
-    </div>
-  );
-};
-
-export default StormTracker;
